@@ -18,9 +18,9 @@ jobs:
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
           git fetch origin prog3 2>/dev/null || true
-          git checkout --orphan prog3 2>/dev/null || git checkout prog3
+          git checkout --orphan prog4 2>/dev/null || git checkout prog4
           git rm -rf . >/dev/null 2>&1 || true
-          echo "whittaker relay2 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog3
+          echo "whittaker relay2 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog4
       - name: download 70MB parts via range requests
         run: |
           TOTAL=2071238227
@@ -35,7 +35,7 @@ jobs:
             end=$((start+PSIZE-1))
             [ $end -ge $TOTAL ] && end=$((TOTAL-1))
             for try in 1 2 3 4 5 6; do
-              curl -s --retry 3 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "https://archive.org/download/mnn_883581_222/883581_222.m4v"
+              curl -sL --retry 3 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "https://archive.org/download/mnn_883581_222/883581_222.m4v"
               sz=$(stat -c%s part_$(printf %02d $i))
               want=$((end-start+1))
               [ "$sz" = "$want" ] && exit 0
@@ -63,6 +63,6 @@ jobs:
             echo "$f -> $u"
             fn=$(echo "$f" | tr '/.' '__')
             echo "$u" > "url_$fn.txt"
-            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog3 || true
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog4 || true
           done
           ls url_*.txt | wc -l
