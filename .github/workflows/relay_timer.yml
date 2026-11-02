@@ -20,7 +20,7 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          if git ls-tree -r origin/prog6 --name-only 2>/dev/null | grep -q '^done.txt$'; then
+          if git ls-tree -r origin/prog6 --name-only 2>/dev/null | grep -q '^timer_done.txt$'; then
             echo "already done"; exit 0
           fi
           git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
@@ -116,6 +116,6 @@ jobs:
             git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog6 || true
             sleep 30
           done
-          echo done > done.txt
-          git add done.txt && git commit -q -m done && git push -q origin prog6
+          echo done > timer_done.txt
+          git add timer_done.txt && git commit -q -m timer_done && git push -q origin prog6
           exit 0
