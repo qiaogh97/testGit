@@ -1,0 +1,19 @@
+name: fetch
+on:
+  push:
+    branches: [master]
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: download from archive.org
+        run: |
+          curl -sL --retry 3 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
+          curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
+          ls -la
+          sha1sum *.mkv
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create transfer burke.mkv soken.mkv --repo qiaogh97/testGit --title transfer --notes "temp relay"
