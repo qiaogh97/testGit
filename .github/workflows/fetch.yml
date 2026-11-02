@@ -17,8 +17,8 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git fetch origin prog4 2>/dev/null || true
-          git checkout prog4 2>/dev/null || git checkout --orphan prog4
+          git checkout --orphan prog5 2>/dev/null || git checkout prog5 2>/dev/null || true
+          echo "whittaker 720p relay start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog5 || true
       - name: download 70MB parts via range requests
         run: |
           TOTAL=2071238227
@@ -41,25 +41,33 @@ jobs:
             done
             exit 1
           '
-          ls -la part_* | wc -l
-      - name: push parts to git in batches
+          cat part_00 part_01 part_02 part_03 part_04 part_05 part_06 part_07 part_08 part_09 part_10 part_11 part_12 part_13 part_14 part_15 part_16 part_17 part_18 part_19 part_20 part_21 part_22 part_23 part_24 part_25 part_26 part_27 part_28 > whittaker.m4v
+          ls -la whittaker.m4v
+          sha1sum whittaker.m4v
+      - name: transcode to 720p
         run: |
-          for s in 0 5 10 15 20 25; do
-            e=$((s+4))
-            added=0
-            for i in $(seq $s $e); do
-              id=$(printf %02d $i)
-              [ -f "part_$id" ] || continue
-              git add "part_$id" && added=$((added+1))
+          ffmpeg -y -i whittaker.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
+          ls -la whittaker_720p.mp4
+          ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of default=nw=1 whittaker_720p.mp4 | head -8
+      - name: split and upload to uguu slowly
+        run: |
+          split -b 70m -d whittaker_720p.mp4 w720.
+          for f in w720.*; do
+            [ -f "$f" ] || continue
+            u=""
+            for try in 1 2 3 4 5 6 7 8 9 10; do
+              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
+              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
+              echo "$f try$try resp: $(echo "$resp" | head -c 150)"
+              sleep 30
             done
-            [ "$added" -gt 0 ] || continue
-            git commit -q -m "parts $s-$e"
-            for try in 1 2 3; do
-              git push -q origin prog4 && break
-              echo "push batch $s try$try failed, retrying"
-              sleep 20
-            done
+            echo "$f -> $u"
+            fn=$(echo "$f" | tr '/.' '__')
+            echo "${u:-FAILED}" > "url_$fn.txt"
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog5 || true
+            sleep 45
           done
           echo done > done.txt
-          git add done.txt && git commit -q -m done && git push -q origin prog4
-          echo GIT_RELAY_DONE
+          git add done.txt && git commit -q -m done && git push -q origin prog5
+          echo RELAY_V6_DONE
