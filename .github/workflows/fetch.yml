@@ -4,7 +4,7 @@ on:
     branches: [master]
   workflow_dispatch:
 jobs:
-  fetch:
+  relay:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -17,35 +17,52 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git fetch origin prog 2>/dev/null || true
-          git checkout --orphan prog2 2>/dev/null || git checkout prog2
+          git fetch origin prog3 2>/dev/null || true
+          git checkout --orphan prog3 2>/dev/null || git checkout prog3
           git rm -rf . >/dev/null 2>&1 || true
-          echo "whittaker relay start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog2
-      - name: download whittaker m4v
+          echo "whittaker relay2 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog3
+      - name: download 70MB parts via range requests
         run: |
-          curl -sL --retry 3 -o whittaker.m4v "https://archive.org/download/mnn_883581_222/883581_222.m4v"
-          ls -la whittaker.m4v && sha1sum whittaker.m4v
-      - name: split
-        run: |
-          split -b 70m -d whittaker.m4v whittaker.m4v.
-          ls -la
-      - name: upload parts and record urls incrementally
+          TOTAL=2071238227
+          PSIZE=73400320
+          N=$(( (TOTAL + PSIZE - 1) / PSIZE ))
+          echo "total=$TOTAL parts=$N"
+          seq 0 $((N-1)) | xargs -P 4 -I{} bash -c '
+            i={}
+            TOTAL=2071238227
+            PSIZE=73400320
+            start=$((i*PSIZE))
+            end=$((start+PSIZE-1))
+            [ $end -ge $TOTAL ] && end=$((TOTAL-1))
+            for try in 1 2 3 4 5 6; do
+              curl -s --retry 3 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "https://archive.org/download/mnn_883581_222/883581_222.m4v"
+              sz=$(stat -c%s part_$(printf %02d $i))
+              want=$((end-start+1))
+              [ "$sz" = "$want" ] && exit 0
+              echo "part $i try$try size=$sz want=$want"
+            done
+            exit 1
+          '
+          ls -la part_* | head -40
+          cat part_* | sha1sum
+      - name: upload parts to uguu and record urls
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for f in whittaker.m4v.*; do
+          for f in part_*; do
             [ -f "$f" ] || continue
             u=""
-            for try in 1 2 3 4 5; do
+            for try in 1 2 3 4 5 6 7 8; do
               resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
               u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
               [ -n "$u" ] && break
-              echo "$f try$try resp: $(echo "$resp" | head -c 200)"
-              sleep 5
+              echo "$f try$try resp: $(echo "$resp" | head -c 150)"
+              sleep 10
             done
+            [ -n "$u" ] || { echo "$f UPLOAD_FAILED"; exit 1; }
             echo "$f -> $u"
             fn=$(echo "$f" | tr '/.' '__')
             echo "$u" > "url_$fn.txt"
-            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog2 || true
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog3 || true
           done
-          ls url_*.txt
+          ls url_*.txt | wc -l
