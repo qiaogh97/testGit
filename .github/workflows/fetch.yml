@@ -2,18 +2,28 @@ name: fetch
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: download from archive.org
         run: |
           curl -sL --retry 3 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
           curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
+          sha1sum burke.mkv soken.mkv
+          split -b 75m -d burke.mkv burke.mkv.
           ls -la
-          sha1sum *.mkv
-      - name: publish release
+      - name: push data branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create transfer burke.mkv soken.mkv --repo qiaogh97/testGit --title transfer --notes "temp relay"
+          git config user.name qiaogh97
+          git config user.email qiaogh97@users.noreply.github.com
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
+          git checkout --orphan data
+          git rm -rf . >/dev/null 2>&1 || true
+          git add burke.mkv.00 burke.mkv.01 soken.mkv
+          git commit -m "relay data"
+          git push -f origin data
