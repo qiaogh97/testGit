@@ -1,0 +1,66 @@
+name: fetch035
+on:
+  push:
+    branches: [relay035]
+  workflow_dispatch:
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name qiaogh97
+          git config user.email qiaogh97@users.noreply.github.com
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
+          git checkout --orphan prog7 2>/dev/null || git checkout prog7 2>/dev/null || true
+          echo "burke relay $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog7 || true
+      - name: download original mkv
+        run: |
+          for try in 1 2 3 4 5; do
+            curl -sL --retry 3 -m 570 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
+            sz=$(stat -c%s burke.mkv)
+            [ "$sz" = "148819955" ] && break
+            echo "try$try size=$sz"
+          done
+          ls -la burke.mkv
+          sha1sum burke.mkv
+      - name: split into 15MB chunks and push to git
+        run: |
+          split -b 15m -d burke.mkv jb.
+          ls jb.* | wc -l
+          for f in jb.*; do
+            git add "$f" && git commit -q -m "add $f"
+            for try in 1 2 3 4; do
+              git push -q origin prog7 && break
+              echo "push $f try$try failed"; sleep 15
+            done
+          done
+          echo git_parts_done > gitdone.txt
+          git add gitdone.txt && git commit -q -m gitdone && git push -q origin prog7
+          echo GIT_PARTS_DONE
+      - name: slow uguu upload of chunks
+        run: |
+          for f in jb.*; do
+            [ -f "$f" ] || continue
+            u=""
+            for try in 1 2 3 4 5 6 7 8; do
+              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
+              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
+              echo "$f try$try resp: $(echo "$resp" | head -c 150)"
+              sleep 45
+            done
+            echo "$f -> ${u:-FAILED}"
+            fn=$(echo "$f" | tr '/.' '__')
+            echo "${u:-FAILED}" > "url_$fn.txt"
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog7 || true
+            sleep 30
+          done
+          echo done > done.txt
+          git add done.txt && git commit -q -m done && git push -q origin prog7
+          echo RELAY_BURKE_DONE
