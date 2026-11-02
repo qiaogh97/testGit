@@ -9,40 +9,38 @@ jobs:
     steps:
       - name: download from archive.org
         run: |
+          set -x
           curl -sL --retry 3 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
           curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
           sha1sum burke.mkv soken.mkv
           split -b 70m -d burke.mkv burke.mkv.
-          ls -la
-      - name: upload parts to file hosts
+      - name: upload parts to uguu
         run: |
+          set -x
           : > urls.txt
           for f in burke.mkv.* soken.mkv; do
             u=""
             for try in 1 2 3; do
-              u=$(curl -s -m 300 -F "file=@$f" https://uguu.se/upload.php)
-              echo "$u" | grep -q 'https://' && break
+              u=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
               sleep 3
             done
-            echo "uguu $f -> $u"
-            if ! echo "$u" | grep -q 'https://'; then
-              u=$(curl -s -m 600 -F "file=@$f" https://0x0.st)
-              echo "0x0 $f -> $u"
-            fi
             echo "$f $u" >> urls.txt
           done
           cat urls.txt
       - name: push data branch
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -x
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git checkout --orphan data2
+          git fetch origin data2 2>/dev/null || true
+          git checkout --orphan data2 2>/dev/null || git checkout data2
           git rm -rf . >/dev/null 2>&1 || true
-          cp ../work/urls.txt . 2>/dev/null || true
-          ls ../work 2>/dev/null
-          git add urls.txt 2>/dev/null
-          git commit -m "urls" 2>/dev/null || true
+          cp urls.txt . 2>/dev/null || echo "urls.txt missing" > urls.txt
+          git add urls.txt
+          git commit -m "urls $(date +%s)"
           git push -f origin data2
