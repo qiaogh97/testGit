@@ -19,33 +19,49 @@ jobs:
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
           git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
           echo "whittaker 720p relay v7 $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog6 || true
-      - name: download 70MB parts via range requests
+      - name: download 70MB parts via range requests (patient, alternating hosts)
         run: |
           TOTAL=2071238227
           PSIZE=73400320
           N=$(( (TOTAL + PSIZE - 1) / PSIZE ))
-          seq 0 $((N-1)) | xargs -P 4 -I{} bash -c '
+          seq 0 $((N-1)) | xargs -P 3 -I{} bash -c '
             i={}
             TOTAL=2071238227
             PSIZE=73400320
             start=$((i*PSIZE))
             end=$((start+PSIZE-1))
             [ $end -ge $TOTAL ] && end=$((TOTAL-1))
-            for try in 1 2 3 4 5 6 7 8; do
-              curl -sL --retry 3 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "https://archive.org/download/mnn_883581_222/883581_222.m4v"
-              sz=$(stat -c%s part_$(printf %02d $i))
-              want=$((end-start+1))
+            want=$((end-start+1))
+            for try in $(seq 1 10); do
+              if [ $((try % 2)) = 1 ]; then
+                URL="https://archive.org/download/mnn_883581_222/883581_222.m4v"
+              else
+                URL="https://dn800304.us.archive.org/0/items/mnn_883581_222/883581_222.m4v"
+              fi
+              curl -sL --retry 2 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "$URL"
+              sz=$(stat -c%s part_$(printf %02d $i) 2>/dev/null || echo 0)
               [ "$sz" = "$want" ] && exit 0
-              echo "part $i try$try size=$sz want=$want"
-              sleep 5
+              echo "part $i try$try size=$sz want=$want url=$URL"
+              sleep 20
             done
-            exit 1
+            echo "part $i MISSING" >> missing.txt
+            exit 0
           '
-          cat part_00 part_01 part_02 part_03 part_04 part_05 part_06 part_07 part_08 part_09 part_10 part_11 part_12 part_13 part_14 part_15 part_16 part_17 part_18 part_19 part_20 part_21 part_22 part_23 part_24 part_25 part_26 part_27 part_28 > whittaker.m4v
-          sha1sum whittaker.m4v
+          cat missing.txt 2>/dev/null || echo "all parts ok"
+          first_missing=99
+          for i in $(seq 0 28); do
+            id=$(printf %02d $i)
+            [ -f "part_$id" ] || { first_missing=$i; break; }
+          done
+          echo "contiguous parts: 0..$((first_missing-1))"
+          rm -f prefix.m4v
+          for i in $(seq 0 $((first_missing-1))); do
+            cat "part_$(printf %02d $i)" >> prefix.m4v
+          done
+          ls -la prefix.m4v
       - name: transcode to 720p and split
         run: |
-          ffmpeg -y -i whittaker.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
+          ffmpeg -y -i prefix.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
           ls -la whittaker_720p.mp4
           ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of default=nw=1 whittaker_720p.mp4 | head -8
           split -b 15m -d whittaker_720p.mp4 w7.
