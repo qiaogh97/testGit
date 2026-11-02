@@ -7,43 +7,49 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
-      - name: download sources
-        run: |
-          set -x
-          curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
-          sha1sum soken.mkv
-          curl -sL --retry 3 -o maumet.webm "https://commons.wikimedia.org/wiki/Special:FilePath/Entretien_avec_Camille_Maumet_Neuroimagerie_et_sciences_ouvertes.webm"
-          ls -la maumet.webm
-          sha1sum maumet.webm
-          split -b 70m -d maumet.webm maumet.webm.
-          ls -la
-      - name: upload parts to uguu
-        run: |
-          set -x
-          : > urls.txt
-          for f in soken.mkv maumet.webm.*; do
-            u=""
-            for try in 1 2 3; do
-              u=$(curl -s -m 600 -F "files[]=@$f" https://uguu.se/upload.php | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
-              [ -n "$u" ] && break
-              sleep 3
-            done
-            echo "$f $u" >> urls.txt
-          done
-          cat urls.txt
-      - name: push data branch
-        if: always()
+      - name: setup
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git fetch origin data2 2>/dev/null || true
-          git checkout --orphan data2 2>/dev/null || git checkout data2
+          git fetch origin prog 2>/dev/null || true
+          git checkout --orphan prog 2>/dev/null || git checkout prog
           git rm -rf . >/dev/null 2>&1 || true
-          cp urls.txt . 2>/dev/null || echo "urls.txt missing" > urls.txt
-          git add urls.txt
-          git commit -m "urls $(date +%s)"
-          git push -f origin data2
+          echo "step1 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog
+      - name: download soken
+        run: |
+          curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
+          ls -la soken.mkv && sha1sum soken.mkv
+      - name: download maumet
+        continue-on-error: true
+        run: |
+          curl -sL --retry 3 -o maumet.webm "https://commons.wikimedia.org/wiki/Special:FilePath/Entretien_avec_Camille_Maumet_Neuroimagerie_et_sciences_ouvertes.webm"
+          ls -la maumet.webm
+          file maumet.webm
+          head -c 200 maumet.webm | xxd | head -3
+      - name: split
+        run: |
+          split -b 70m -d maumet.webm maumet.webm. 2>/dev/null || true
+          ls -la
+      - name: upload parts and record urls incrementally
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in soken.mkv maumet.webm.*; do
+            [ -f "$f" ] || continue
+            u=""
+            for try in 1 2 3; do
+              resp=$(curl -s -m 600 -F "files[]=@$f" https://uguu.se/upload.php)
+              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
+              echo "$f try$try resp: $(echo "$resp" | head -c 200)"
+              sleep 5
+            done
+            echo "$f -> $u"
+            fn=$(echo "$f" | tr '/.' '__')
+            echo "$u" > "url_$fn.txt"
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog || true
+          done
+          ls url_*.txt
