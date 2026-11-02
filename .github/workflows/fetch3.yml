@@ -1,0 +1,86 @@
+name: fetch033
+on:
+  push:
+    branches: [relay033]
+  workflow_dispatch:
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name qiaogh97
+          git config user.email qiaogh97@users.noreply.github.com
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
+          git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
+          echo "whittaker 720p relay v7 $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog6 || true
+      - name: download 70MB parts via range requests
+        run: |
+          TOTAL=2071238227
+          PSIZE=73400320
+          N=$(( (TOTAL + PSIZE - 1) / PSIZE ))
+          seq 0 $((N-1)) | xargs -P 4 -I{} bash -c '
+            i={}
+            TOTAL=2071238227
+            PSIZE=73400320
+            start=$((i*PSIZE))
+            end=$((start+PSIZE-1))
+            [ $end -ge $TOTAL ] && end=$((TOTAL-1))
+            for try in 1 2 3 4 5 6 7 8; do
+              curl -sL --retry 3 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "https://archive.org/download/mnn_883581_222/883581_222.m4v"
+              sz=$(stat -c%s part_$(printf %02d $i))
+              want=$((end-start+1))
+              [ "$sz" = "$want" ] && exit 0
+              echo "part $i try$try size=$sz want=$want"
+              sleep 5
+            done
+            exit 1
+          '
+          cat part_00 part_01 part_02 part_03 part_04 part_05 part_06 part_07 part_08 part_09 part_10 part_11 part_12 part_13 part_14 part_15 part_16 part_17 part_18 part_19 part_20 part_21 part_22 part_23 part_24 part_25 part_26 part_27 part_28 > whittaker.m4v
+          sha1sum whittaker.m4v
+      - name: transcode to 720p and split
+        run: |
+          ffmpeg -y -i whittaker.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
+          ls -la whittaker_720p.mp4
+          ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of default=nw=1 whittaker_720p.mp4 | head -8
+          split -b 15m -d whittaker_720p.mp4 w7.
+          ls w7.* | wc -l
+      - name: push 720p chunks to git prog6
+        run: |
+          for f in w7.*; do
+            [ -f "$f" ] || continue
+            git add "$f" && git commit -q -m "add $f"
+            for try in 1 2 3 4; do
+              git push -q origin prog6 && break
+              echo "push $f try$try failed"; sleep 15
+            done
+          done
+          echo git_parts_done > gitdone.txt
+          git add gitdone.txt && git commit -q -m gitdone && git push -q origin prog6
+          echo GIT_PARTS_DONE
+      - name: slow uguu upload of chunks
+        run: |
+          for f in w7.*; do
+            [ -f "$f" ] || continue
+            u=""
+            for try in 1 2 3 4 5 6 7 8; do
+              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
+              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
+              echo "$f try$try resp: $(echo "$resp" | head -c 150)"
+              sleep 45
+            done
+            echo "$f -> ${u:-FAILED}"
+            fn=$(echo "$f" | tr '/.' '__')
+            echo "${u:-FAILED}" > "url_$fn.txt"
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog6 || true
+            sleep 30
+          done
+          echo done > done.txt
+          git add done.txt && git commit -q -m done && git push -q origin prog6
+          echo RELAY_V7_DONE
