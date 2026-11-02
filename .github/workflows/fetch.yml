@@ -7,21 +7,24 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
-      - name: download from archive.org
+      - name: download sources
         run: |
           set -x
-          curl -sL --retry 3 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
           curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
-          sha1sum burke.mkv soken.mkv
-          split -b 70m -d burke.mkv burke.mkv.
+          sha1sum soken.mkv
+          curl -sL --retry 3 -o maumet.webm "https://commons.wikimedia.org/wiki/Special:FilePath/Entretien_avec_Camille_Maumet_Neuroimagerie_et_sciences_ouvertes.webm"
+          ls -la maumet.webm
+          sha1sum maumet.webm
+          split -b 70m -d maumet.webm maumet.webm.
+          ls -la
       - name: upload parts to uguu
         run: |
           set -x
           : > urls.txt
-          for f in burke.mkv.* soken.mkv; do
+          for f in soken.mkv maumet.webm.*; do
             u=""
             for try in 1 2 3; do
-              u=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              u=$(curl -s -m 600 -F "files[]=@$f" https://uguu.se/upload.php | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
               [ -n "$u" ] && break
               sleep 3
             done
