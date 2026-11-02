@@ -1,0 +1,17 @@
+name: cleanup
+on:
+  push:
+    branches: [cleanup]
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: delete release and files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete transfer --yes --repo qiaogh97/testGit || true
+          git checkout master
+          git rm -rf .github/workflows/fetch.yml burke.mkv soken.mkv 2>/dev/null || true
+          git commit -m "cleanup relay" && git push origin HEAD:master || true
