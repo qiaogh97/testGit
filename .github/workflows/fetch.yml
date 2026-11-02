@@ -18,33 +18,26 @@ jobs:
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
           git fetch origin prog 2>/dev/null || true
-          git checkout --orphan prog 2>/dev/null || git checkout prog
+          git checkout --orphan prog2 2>/dev/null || git checkout prog2
           git rm -rf . >/dev/null 2>&1 || true
-          echo "step1 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog
-      - name: download soken
+          echo "whittaker relay start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog2
+      - name: download whittaker m4v
         run: |
-          curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
-          ls -la soken.mkv && sha1sum soken.mkv
-      - name: download maumet
-        continue-on-error: true
-        run: |
-          curl -sL --retry 3 -o maumet.webm "https://commons.wikimedia.org/wiki/Special:FilePath/Entretien_avec_Camille_Maumet_Neuroimagerie_et_sciences_ouvertes.webm"
-          ls -la maumet.webm
-          file maumet.webm
-          head -c 200 maumet.webm | xxd | head -3
+          curl -sL --retry 3 -o whittaker.m4v "https://archive.org/download/mnn_883581_222/883581_222.m4v"
+          ls -la whittaker.m4v && sha1sum whittaker.m4v
       - name: split
         run: |
-          split -b 70m -d maumet.webm maumet.webm. 2>/dev/null || true
+          split -b 70m -d whittaker.m4v whittaker.m4v.
           ls -la
       - name: upload parts and record urls incrementally
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for f in soken.mkv maumet.webm.*; do
+          for f in whittaker.m4v.*; do
             [ -f "$f" ] || continue
             u=""
             for try in 1 2 3 4 5; do
-              resp=$(curl -s -m 180 -F "files[]=@$f" https://uguu.se/upload.php)
+              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
               u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
               [ -n "$u" ] && break
               echo "$f try$try resp: $(echo "$resp" | head -c 200)"
@@ -53,6 +46,6 @@ jobs:
             echo "$f -> $u"
             fn=$(echo "$f" | tr '/.' '__')
             echo "$u" > "url_$fn.txt"
-            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog || true
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog2 || true
           done
           ls url_*.txt
