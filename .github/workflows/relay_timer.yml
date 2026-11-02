@@ -1,0 +1,121 @@
+name: relay-timer
+on:
+  push:
+    branches: [master]
+    paths: [".github/workflows/relay_timer.yml"]
+  schedule:
+    - cron: "9,34,59 * * * *"
+  workflow_dispatch:
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name qiaogh97
+          git config user.email qiaogh97@users.noreply.github.com
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
+          if git ls-tree -r origin/prog6 --name-only 2>/dev/null | grep -q '^done.txt$'; then
+            echo "already done"; exit 0
+          fi
+          git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
+      - name: probe channels
+        id: probe
+        run: |
+          set +e
+          SRC="https://archive.org/download/mnn_883581_222/883581_222.m4v"
+          # probe 1: direct range
+          code=$(curl -sL -m 25 -r 0-1048575 -o probe.bin -w "%{http_code}" "$SRC")
+          sz=$(stat -c%s probe.bin 2>/dev/null || echo 0)
+          echo "direct: code=$code sz=$sz"
+          if [ "$sz" -ge 1048576 ]; then echo "channel=direct" >> $GITHUB_OUTPUT; exit 0; fi
+          # probe 2: codetabs proxy range
+          code=$(curl -sL -m 25 -r 0-1048575 -o probe.bin -w "%{http_code}" "https://api.codetabs.com/v1/proxy?quest=$SRC")
+          sz=$(stat -c%s probe.bin 2>/dev/null || echo 0)
+          echo "codetabs: code=$code sz=$sz"
+          if [ "$sz" -ge 1048576 ]; then echo "channel=codetabs" >> $GITHUB_OUTPUT; exit 0; fi
+          # probe 3: allorigins raw range
+          code=$(curl -sL -m 25 -r 0-1048575 -o probe.bin -w "%{http_code}" "https://api.allorigins.win/raw?url=$SRC")
+          sz=$(stat -c%s probe.bin 2>/dev/null || echo 0)
+          echo "allorigins: code=$code sz=$sz"
+          if [ "$sz" -ge 1048576 ]; then echo "channel=allorigins" >> $GITHUB_OUTPUT; exit 0; fi
+          echo "channel=none" >> $GITHUB_OUTPUT
+          exit 0
+      - name: relay via working channel
+        if: steps.probe.outputs.channel != 'none'
+        run: |
+          set +e
+          SRC="https://archive.org/download/mnn_883581_222/883581_222.m4v"
+          CH="${{ steps.probe.outputs.channel }}"
+          if [ "$CH" = "direct" ]; then URL="$SRC"; fi
+          if [ "$CH" = "codetabs" ]; then URL="https://api.codetabs.com/v1/proxy?quest=$SRC"; fi
+          if [ "$CH" = "allorigins" ]; then URL="https://api.allorigins.win/raw?url=$SRC"; fi
+          echo "using channel=$CH"
+          # 29x70MB range download
+          TOTAL=2071238227; PSIZE=73400320
+          seq 0 28 | xargs -P 3 -I{} bash -c '
+            i={}
+            TOTAL=2071238227; PSIZE=73400320
+            start=$((i*PSIZE)); end=$((start+PSIZE-1)); [ $end -ge $TOTAL ] && end=$((TOTAL-1))
+            want=$((end-start+1))
+            URL="'"$URL"'"
+            for try in 1 2 3 4 5; do
+              curl -sL -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "$URL"
+              sz=$(stat -c%s part_$(printf %02d $i) 2>/dev/null || echo 0)
+              [ "$sz" = "$want" ] && exit 0
+              echo "part $i try$try sz=$sz want=$want"
+              sleep 10
+            done
+            exit 1
+          '
+          RC=$?
+          echo "download rc=$RC"
+          [ "$RC" = 0 ] || exit 0
+          cat part_00 part_01 part_02 part_03 part_04 part_05 part_06 part_07 part_08 part_09 part_10 part_11 part_12 part_13 part_14 part_15 part_16 part_17 part_18 part_19 part_20 part_21 part_22 part_23 part_24 part_25 part_26 part_27 part_28 > whittaker.m4v
+          sha1sum whittaker.m4v | tee sha1.txt
+          git add sha1.txt && git commit -q -m sha1 && git push -q origin prog6 || true
+      - name: transcode split push
+        run: |
+          set +e
+          [ -s whittaker.m4v ] || { echo "no m4v yet"; exit 0; }
+          S=$(sha1sum whittaker.m4v | cut -d' ' -f1)
+          if [ "$S" != "6aab71b7d2b7edbf25e3de4fc9b7fae364cf4714" ]; then echo "sha1 mismatch $S"; exit 0; fi
+          ffmpeg -y -i whittaker.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
+          split -b 15m -d whittaker_720p.mp4 w7.
+          for f in w7.*; do
+            [ -f "$f" ] || continue
+            git add "$f" && git commit -q -m "add $f"
+            for try in 1 2 3 4; do
+              git push -q origin prog6 && break
+              sleep 15
+            done
+          done
+          echo git_parts_done > gitdone.txt
+          git add gitdone.txt && git commit -q -m gitdone && git push -q origin prog6
+          echo GIT_PARTS_DONE
+          exit 0
+      - name: slow uguu upload
+        run: |
+          set +e
+          for f in w7.*; do
+            [ -f "$f" ] || continue
+            u=""
+            for try in 1 2 3 4 5 6 7 8; do
+              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
+              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
+              [ -n "$u" ] && break
+              sleep 45
+            done
+            fn=$(echo "$f" | tr '/.' '__')
+            echo "${u:-FAILED}" > "url_$fn.txt"
+            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog6 || true
+            sleep 30
+          done
+          echo done > done.txt
+          git add done.txt && git commit -q -m done && git push -q origin prog6
+          exit 0
