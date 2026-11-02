@@ -20,10 +20,15 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
+          git fetch origin prog6 2>/dev/null || true
           if git ls-tree -r origin/prog6 --name-only 2>/dev/null | grep -q '^timer_done.txt$'; then
             echo "already done"; exit 0
           fi
-          git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
+          if git rev-parse --verify -q origin/prog6 >/dev/null; then
+            git checkout -q -b prog6 origin/prog6 2>/dev/null || git checkout -q prog6
+          else
+            git checkout --orphan prog6
+          fi
       - name: probe channels
         id: probe
         run: |
@@ -44,6 +49,8 @@ jobs:
           sz=$(stat -c%s probe.bin 2>/dev/null || echo 0)
           echo "allorigins: code=$code sz=$sz"
           if [ "$sz" -ge 1048576 ]; then echo "channel=allorigins" >> $GITHUB_OUTPUT; exit 0; fi
+          echo "channel=none $(date)" > probe.txt
+          git add probe.txt 2>/dev/null && git commit -q -m probe 2>/dev/null && git push -q origin prog6 2>/dev/null || true
           echo "channel=none" >> $GITHUB_OUTPUT
           exit 0
       - name: relay via working channel
