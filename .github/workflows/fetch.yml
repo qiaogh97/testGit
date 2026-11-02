@@ -7,14 +7,31 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - name: download from archive.org
         run: |
           curl -sL --retry 3 -o burke.mkv "https://archive.org/download/youtube-a6uYvzLrXJU/a6uYvzLrXJU.mkv"
           curl -sL --retry 3 -o soken.mkv "https://archive.org/download/youtube-B8xZo5XhLlA/B8xZo5XhLlA.mkv"
           sha1sum burke.mkv soken.mkv
-          split -b 75m -d burke.mkv burke.mkv.
+          split -b 70m -d burke.mkv burke.mkv.
           ls -la
+      - name: upload parts to file hosts
+        run: |
+          : > urls.txt
+          for f in burke.mkv.* soken.mkv; do
+            u=""
+            for try in 1 2 3; do
+              u=$(curl -s -m 300 -F "file=@$f" https://uguu.se/upload.php)
+              echo "$u" | grep -q 'https://' && break
+              sleep 3
+            done
+            echo "uguu $f -> $u"
+            if ! echo "$u" | grep -q 'https://'; then
+              u=$(curl -s -m 600 -F "file=@$f" https://0x0.st)
+              echo "0x0 $f -> $u"
+            fi
+            echo "$f $u" >> urls.txt
+          done
+          cat urls.txt
       - name: push data branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -22,8 +39,10 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git checkout --orphan data
+          git checkout --orphan data2
           git rm -rf . >/dev/null 2>&1 || true
-          git add burke.mkv.00 burke.mkv.01 soken.mkv
-          git commit -m "relay data"
-          git push -f origin data
+          cp ../work/urls.txt . 2>/dev/null || true
+          ls ../work 2>/dev/null
+          git add urls.txt 2>/dev/null
+          git commit -m "urls" 2>/dev/null || true
+          git push -f origin data2
