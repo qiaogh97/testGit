@@ -17,10 +17,8 @@ jobs:
           git config user.name qiaogh97
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
-          git fetch origin prog3 2>/dev/null || true
-          git checkout --orphan prog4 2>/dev/null || git checkout prog4
-          git rm -rf . >/dev/null 2>&1 || true
-          echo "whittaker relay2 start $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog4
+          git fetch origin prog4 2>/dev/null || true
+          git checkout prog4 2>/dev/null || git checkout --orphan prog4
       - name: download 70MB parts via range requests
         run: |
           TOTAL=2071238227
@@ -43,26 +41,25 @@ jobs:
             done
             exit 1
           '
-          ls -la part_* | head -40
-          cat part_* | sha1sum
-      - name: upload parts to uguu and record urls
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ls -la part_* | wc -l
+      - name: push parts to git in batches
         run: |
-          for f in part_*; do
-            [ -f "$f" ] || continue
-            u=""
-            for try in 1 2 3 4 5 6 7 8; do
-              resp=$(curl -s -m 300 -F "files[]=@$f" https://uguu.se/upload.php)
-              u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
-              [ -n "$u" ] && break
-              echo "$f try$try resp: $(echo "$resp" | head -c 150)"
-              sleep 10
+          for s in 0 5 10 15 20 25; do
+            e=$((s+4))
+            added=0
+            for i in $(seq $s $e); do
+              id=$(printf %02d $i)
+              [ -f "part_$id" ] || continue
+              git add "part_$id" && added=$((added+1))
             done
-            [ -n "$u" ] || { echo "$f UPLOAD_FAILED"; exit 1; }
-            echo "$f -> $u"
-            fn=$(echo "$f" | tr '/.' '__')
-            echo "$u" > "url_$fn.txt"
-            git add "url_$fn.txt" && git commit -q -m "url $f" && git push -q origin prog4 || true
+            [ "$added" -gt 0 ] || continue
+            git commit -q -m "parts $s-$e"
+            for try in 1 2 3; do
+              git push -q origin prog4 && break
+              echo "push batch $s try$try failed, retrying"
+              sleep 20
+            done
           done
-          ls url_*.txt | wc -l
+          echo done > done.txt
+          git add done.txt && git commit -q -m done && git push -q origin prog4
+          echo GIT_RELAY_DONE
