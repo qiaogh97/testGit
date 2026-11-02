@@ -6,6 +6,8 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: setup
         env:
@@ -40,8 +42,8 @@ jobs:
           for f in soken.mkv maumet.webm.*; do
             [ -f "$f" ] || continue
             u=""
-            for try in 1 2 3; do
-              resp=$(curl -s -m 600 -F "files[]=@$f" https://uguu.se/upload.php)
+            for try in 1 2 3 4 5; do
+              resp=$(curl -s -m 180 -F "files[]=@$f" https://uguu.se/upload.php)
               u=$(echo "$resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['files'][0]['url'])" 2>/dev/null)
               [ -n "$u" ] && break
               echo "$f try$try resp: $(echo "$resp" | head -c 200)"
