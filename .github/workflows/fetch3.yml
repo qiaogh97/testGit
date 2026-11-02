@@ -18,56 +18,25 @@ jobs:
           git config user.email qiaogh97@users.noreply.github.com
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/qiaogh97/testGit.git
           git checkout --orphan prog6 2>/dev/null || git checkout prog6 2>/dev/null || true
-          echo "whittaker 720p relay v7 $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog6 || true
-      - name: download 70MB parts via range requests (patient, alternating hosts)
+          echo "whittaker 720p relay v9 $(date)" > s1.txt && git add s1.txt && git commit -q -m s1 && git push -qf origin prog6 || true
+      - name: stream transcode first 25 min to 720p
         run: |
-          TOTAL=2071238227
-          PSIZE=73400320
-          N=$(( (TOTAL + PSIZE - 1) / PSIZE ))
-          seq 0 $((N-1)) | xargs -P 3 -I{} bash -c '
-            i={}
-            TOTAL=2071238227
-            PSIZE=73400320
-            start=$((i*PSIZE))
-            end=$((start+PSIZE-1))
-            [ $end -ge $TOTAL ] && end=$((TOTAL-1))
-            want=$((end-start+1))
-            for try in $(seq 1 10); do
-              if [ $((try % 2)) = 1 ]; then
-                URL="https://archive.org/download/mnn_883581_222/883581_222.m4v"
-              else
-                URL="https://dn800304.us.archive.org/0/items/mnn_883581_222/883581_222.m4v"
-              fi
-              curl -sL --retry 2 -m 570 -r ${start}-${end} -o part_$(printf %02d $i) "$URL"
-              sz=$(stat -c%s part_$(printf %02d $i) 2>/dev/null || echo 0)
-              [ "$sz" = "$want" ] && exit 0
-              echo "part $i try$try size=$sz want=$want url=$URL"
-              sleep 20
-            done
-            echo "part $i MISSING" >> missing.txt
+          set +e
+          ffmpeg -y -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30 -i "https://archive.org/download/mnn_883581_222/883581_222.m4v" -t 1500 -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
+          echo "ffmpeg exit=$?"
+          ls -la whittaker_720p.mp4 2>/dev/null
+          ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of default=nw=1 whittaker_720p.mp4 2>&1 | head -8
+          exit 0
+      - name: split into 15MB chunks and push to git
+        run: |
+          set +e
+          if [ ! -s whittaker_720p.mp4 ]; then
+            echo "NO_VIDEO" > fail.txt
+            git add fail.txt && git commit -q -m fail && git push -q origin prog6
             exit 0
-          '
-          cat missing.txt 2>/dev/null || echo "all parts ok"
-          first_missing=99
-          for i in $(seq 0 28); do
-            id=$(printf %02d $i)
-            [ -f "part_$id" ] || { first_missing=$i; break; }
-          done
-          echo "contiguous parts: 0..$((first_missing-1))"
-          rm -f prefix.m4v
-          for i in $(seq 0 $((first_missing-1))); do
-            cat "part_$(printf %02d $i)" >> prefix.m4v
-          done
-          ls -la prefix.m4v
-      - name: transcode to 720p and split
-        run: |
-          ffmpeg -y -i prefix.m4v -vf scale=1280:720 -c:v libx264 -crf 21 -preset fast -c:a aac -b:a 128k whittaker_720p.mp4
-          ls -la whittaker_720p.mp4
-          ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of default=nw=1 whittaker_720p.mp4 | head -8
+          fi
           split -b 15m -d whittaker_720p.mp4 w7.
           ls w7.* | wc -l
-      - name: push 720p chunks to git prog6
-        run: |
           for f in w7.*; do
             [ -f "$f" ] || continue
             git add "$f" && git commit -q -m "add $f"
@@ -79,8 +48,10 @@ jobs:
           echo git_parts_done > gitdone.txt
           git add gitdone.txt && git commit -q -m gitdone && git push -q origin prog6
           echo GIT_PARTS_DONE
+          exit 0
       - name: slow uguu upload of chunks
         run: |
+          set +e
           for f in w7.*; do
             [ -f "$f" ] || continue
             u=""
@@ -99,4 +70,5 @@ jobs:
           done
           echo done > done.txt
           git add done.txt && git commit -q -m done && git push -q origin prog6
-          echo RELAY_V7_DONE
+          echo RELAY_V9_DONE
+          exit 0
